@@ -1,8 +1,8 @@
 const Media = require("../models/Media");
-const { getStorage } = require("../storage");
+const cloudinaryService = require("../services/cloudinaryService");
 
 // Paginated + filterable listing. Never returns full binaries — only
-// metadata plus a short-lived signed URL, generated on demand.
+// metadata plus the Cloudinary URLs already stored on the document.
 async function listMedia(req, res) {
   const {
     page = 1,
@@ -19,15 +19,29 @@ async function listMedia(req, res) {
 
   const skip = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
 
-  const [items, total] = await Promise.all([
+  const [items, total, storageStats] = await Promise.all([
     Media.find(query)
       .sort({ [sortBy]: sortDir === "asc" ? 1 : -1 })
       .skip(skip)
       .limit(parseInt(limit, 10)),
     Media.countDocuments(query),
+    Media.aggregate([{ $group: { _id: null, totalBytes: { $sum: "$cloudinaryBytes" } } }]),
   ]);
 
-  res.json({ items, total, page: parseInt(page, 10), limit: parseInt(limit, 10) });
+  // Thumbnails are generated on the fly via Cloudinary transformations —
+  // no separate thumbnail asset is uploaded or stored.
+  const itemsWithThumbnails = items.map((item) => ({
+    ...item.toObject(),
+    thumbnailUrl: cloudinaryService.getThumbnailUrl(item.cloudinaryPublicId, item.cloudinaryResourceType),
+  }));
+
+  res.json({
+    items: itemsWithThumbnails,
+    total,
+    page: parseInt(page, 10),
+    limit: parseInt(limit, 10),
+    totalStorageBytes: storageStats[0]?.totalBytes || 0,
+  });
 }
 
 async function getMedia(req, res) {
@@ -36,24 +50,29 @@ async function getMedia(req, res) {
   res.json({ item });
 }
 
+// Returns the playback/full-resolution URL plus a dynamically generated
+// thumbnail URL. Both come from Cloudinary transformations — nothing is
+// re-downloaded or re-uploaded to produce them.
 async function getMediaUrl(req, res) {
   const item = await Media.findById(req.params.id);
   if (!item) return res.status(404).json({ error: "Media not found" });
 
-  const storage = getStorage();
-  const url = await storage.getSignedUrl(item.storageKey, 3600);
-  const thumbnailUrl = item.thumbnailKey ? await storage.getSignedUrl(item.thumbnailKey, 3600) : null;
+  const url = item.cloudinaryUrl;
+  const thumbnailUrl = cloudinaryService.getThumbnailUrl(item.cloudinaryPublicId, item.cloudinaryResourceType);
 
   res.json({ url, thumbnailUrl });
 }
 
+// "Delete cloud copy" — deletes the Cloudinary asset, then removes the
+// Mongo record. If Cloudinary deletion fails, the Mongo record is left
+// untouched so the backup is never silently lost from tracking.
 async function deleteMedia(req, res) {
   const item = await Media.findById(req.params.id);
   if (!item) return res.status(404).json({ error: "Media not found" });
 
-  const storage = getStorage();
-  await storage.delete(item.storageKey);
-  if (item.thumbnailKey) await storage.delete(item.thumbnailKey);
+  await cloudinaryService.deleteAsset(item.cloudinaryPublicId, item.cloudinaryResourceType);
+  // Only reached if deleteAsset succeeded (or the asset was already gone) —
+  // deleteAsset throws on real failure, which propagates to errorHandler.
   await Media.deleteOne({ _id: item._id });
 
   res.json({ ok: true });
@@ -65,26 +84,26 @@ async function bulkDelete(req, res) {
     return res.status(400).json({ error: "mediaIds array is required" });
   }
 
-  const storage = getStorage();
   const items = await Media.find({ _id: { $in: mediaIds } });
+  const deletedIds = [];
+  const failed = [];
+
   for (const item of items) {
-    await storage.delete(item.storageKey);
-    if (item.thumbnailKey) await storage.delete(item.thumbnailKey);
+    try {
+      await cloudinaryService.deleteAsset(item.cloudinaryPublicId, item.cloudinaryResourceType);
+      deletedIds.push(item._id);
+    } catch (err) {
+      // Never remove the Mongo record for an item whose Cloudinary
+      // deletion failed — leave it intact and report it back.
+      failed.push({ id: item._id, error: err.publicMessage || "Cloudinary deletion failed" });
+    }
   }
-  await Media.deleteMany({ _id: { $in: mediaIds } });
 
-  res.json({ ok: true, deletedCount: items.length });
+  if (deletedIds.length > 0) {
+    await Media.deleteMany({ _id: { $in: deletedIds } });
+  }
+
+  res.json({ ok: failed.length === 0, deletedCount: deletedIds.length, failed });
 }
 
-// Serves local-storage files directly. Only reachable behind requireAdmin
-// (or requireDevice for device-originated fetches), and only used when
-// STORAGE_PROVIDER=local for development.
-async function serveLocalFile(req, res) {
-  const storage = getStorage();
-  const key = decodeURIComponent(req.params.key);
-  if (!(await storage.exists(key))) return res.status(404).end();
-  const stream = await storage.download(key);
-  stream.pipe(res);
-}
-
-module.exports = { listMedia, getMedia, getMediaUrl, deleteMedia, bulkDelete, serveLocalFile };
+module.exports = { listMedia, getMedia, getMediaUrl, deleteMedia, bulkDelete };

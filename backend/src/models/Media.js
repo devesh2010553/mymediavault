@@ -13,8 +13,20 @@ const mediaSchema = new mongoose.Schema(
     createdAt: { type: Date }, // original media creation time (from device)
     modifiedAt: { type: Date },
     checksum: { type: String, index: true }, // sha256, used for de-dup
-    storageKey: { type: String, required: true },
-    thumbnailKey: { type: String },
+
+    // Cloudinary is the only place the actual media binary lives. These
+    // fields are exactly what Cloudinary's upload response returns, so
+    // MongoDB never needs to store or re-derive anything about the asset
+    // beyond what Cloudinary already told us.
+    cloudinaryPublicId: { type: String, required: true },
+    cloudinaryUrl: { type: String, required: true }, // secure_url
+    cloudinaryResourceType: { type: String, enum: ["image", "video"], required: true },
+    cloudinaryFormat: { type: String },
+    cloudinaryBytes: { type: Number },
+    cloudinaryWidth: { type: Number },
+    cloudinaryHeight: { type: Number },
+    cloudinaryDuration: { type: Number }, // seconds, video only
+
     androidMediaId: { type: String, index: true }, // MediaStore _ID on device
     backupStatus: {
       type: String,

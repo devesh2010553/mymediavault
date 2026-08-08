@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import client from "../api/client";
 
+function formatBytes(bytes) {
+  if (!bytes) return "0 GB";
+  const gb = bytes / (1024 * 1024 * 1024);
+  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
 
@@ -15,6 +21,9 @@ export default function DashboardPage() {
       setStats({
         photos: photosRes.data.total,
         videos: videosRes.data.total,
+        // totalStorageBytes reflects all media in Cloudinary regardless of
+        // the mediaType filter used for this particular request.
+        totalStorageBytes: photosRes.data.totalStorageBytes,
         device,
       });
     }
@@ -36,6 +45,10 @@ export default function DashboardPage() {
           <div className="stat-label">Videos</div>
         </div>
         <div className="card">
+          <div className="stat-value">{formatBytes(stats.totalStorageBytes)}</div>
+          <div className="stat-label">Cloud storage used</div>
+        </div>
+        <div className="card">
           <div className="stat-value">
             <span className={"badge " + (stats.device?.status || "offline")}>
               {stats.device?.status || "No device"}
@@ -49,6 +62,15 @@ export default function DashboardPage() {
           </div>
           <div className="stat-label">Last sync</div>
         </div>
+        {stats.device && (
+          <div className="card">
+            <div className="stat-value" style={{ fontSize: 16 }}>
+              {stats.device.model || stats.device.name}
+              {stats.device.androidVersion ? ` · Android ${stats.device.androidVersion}` : ""}
+            </div>
+            <div className="stat-label">Device</div>
+          </div>
+        )}
       </div>
     </div>
   );

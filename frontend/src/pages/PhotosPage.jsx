@@ -10,6 +10,7 @@ export default function PhotosPage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState([]);
   const [confirmMode, setConfirmMode] = useState(null);
+  const [viewer, setViewer] = useState(null); // { item, url }
   const limit = 60;
 
   const load = useCallback(async () => {
@@ -22,8 +23,24 @@ export default function PhotosPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function resolveThumb(item) {
-    return null; // thumbnails are fetched lazily via /media/:id/url in a real UI; omitted here for brevity
+  async function openViewer(item) {
+    const res = await client.get(`/media/${item._id}/url`);
+    setViewer({ item, url: res.data.url });
+  }
+
+  async function downloadSelected() {
+    for (const id of selected) {
+      const res = await client.get(`/media/${id}/url`);
+      const item = items.find((i) => i._id === id);
+      const a = document.createElement("a");
+      a.href = res.data.url;
+      a.download = item?.filename || "download";
+      a.target = "_blank";
+      a.rel = "noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
   }
 
   async function handleDelete(mode) {
@@ -53,9 +70,7 @@ export default function PhotosPage() {
         {selected.length > 0 && (
           <>
             <button className="btn secondary">{selected.length} selected</button>
-            <button className="btn" onClick={() => client.get("/media") /* download flow via signed URL per item */}>
-              Download
-            </button>
+            <button className="btn" onClick={downloadSelected}>Download</button>
             <button className="btn danger" onClick={() => setConfirmMode("cloud")}>Delete cloud copy</button>
             <button className="btn danger" onClick={() => setConfirmMode("phone")}>Delete from phone</button>
             <button className="btn danger" onClick={() => setConfirmMode("both")}>Delete both</button>
@@ -63,7 +78,7 @@ export default function PhotosPage() {
         )}
       </div>
 
-      <MediaGrid items={items} onSelectionChange={setSelected} resolveThumb={null} />
+      <MediaGrid items={items} onSelectionChange={setSelected} onOpenItem={openViewer} />
 
       <div className="toolbar" style={{ marginTop: 16 }}>
         <button className="btn secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</button>
@@ -72,6 +87,26 @@ export default function PhotosPage() {
         </span>
         <button className="btn secondary" disabled={page * limit >= total} onClick={() => setPage((p) => p + 1)}>Next</button>
       </div>
+
+      {viewer && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 60 }}
+          onClick={() => setViewer(null)}
+        >
+          <img
+            src={viewer.url}
+            alt={viewer.item.filename}
+            style={{ maxWidth: "90%", maxHeight: "85%", objectFit: "contain" }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div style={{ marginTop: 12, display: "flex", gap: 10 }} onClick={(e) => e.stopPropagation()}>
+            <a href={viewer.url} download={viewer.item.filename} target="_blank" rel="noreferrer">
+              <button className="btn secondary">Download</button>
+            </a>
+            <button className="btn secondary" onClick={() => setViewer(null)}>Close</button>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={!!confirmMode}

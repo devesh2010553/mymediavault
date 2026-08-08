@@ -18,7 +18,7 @@ export default function VideosPage() {
 
   async function play(item) {
     const res = await client.get(`/media/${item._id}/url`);
-    setPlaying({ item, url: res.data.url });
+    setPlaying({ item, url: res.data.url, poster: item.thumbnailUrl });
   }
 
   return (
@@ -27,19 +27,33 @@ export default function VideosPage() {
       <table>
         <thead>
           <tr>
-            <th>Filename</th><th>Duration</th><th>Size</th><th>Date</th><th></th>
+            <th></th><th>Filename</th><th>Duration</th><th>Size</th><th>Date</th><th></th>
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
-            <tr key={item._id}>
-              <td>{item.filename}</td>
-              <td>{item.duration ? `${Math.round(item.duration)}s` : "-"}</td>
-              <td>{(item.size / (1024 * 1024)).toFixed(1)} MB</td>
-              <td>{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "-"}</td>
-              <td><button className="btn secondary" onClick={() => play(item)}>Play</button></td>
-            </tr>
-          ))}
+          {items.map((item) => {
+            const durationSeconds = item.duration || item.cloudinaryDuration;
+            return (
+              <tr key={item._id}>
+                <td>
+                  {item.thumbnailUrl && (
+                    <img
+                      src={item.thumbnailUrl}
+                      alt=""
+                      style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 6, display: "block" }}
+                    />
+                  )}
+                </td>
+                <td>{item.filename}</td>
+                <td>{durationSeconds ? `${Math.round(durationSeconds)}s` : "-"}</td>
+                <td>{((item.cloudinaryBytes || item.size) / (1024 * 1024)).toFixed(1)} MB</td>
+                <td>{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "-"}</td>
+                <td>
+                  <button className="btn secondary" onClick={() => play(item)}>Play</button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
@@ -52,8 +66,24 @@ export default function VideosPage() {
       </div>
 
       {playing && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setPlaying(null)}>
-          <video src={playing.url} controls autoPlay style={{ maxWidth: "90%", maxHeight: "90%" }} />
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 60 }}
+          onClick={() => setPlaying(null)}
+        >
+          <video
+            src={playing.url}
+            poster={playing.poster}
+            controls
+            autoPlay
+            style={{ maxWidth: "90%", maxHeight: "80%" }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div style={{ marginTop: 12, display: "flex", gap: 10 }} onClick={(e) => e.stopPropagation()}>
+            <a href={playing.url} download={playing.item.filename} target="_blank" rel="noreferrer">
+              <button className="btn secondary">Download</button>
+            </a>
+            <button className="btn secondary" onClick={() => setPlaying(null)}>Close</button>
+          </div>
         </div>
       )}
     </div>
