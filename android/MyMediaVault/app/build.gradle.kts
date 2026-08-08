@@ -17,7 +17,7 @@ android {
 
         // Set the backend URL here before building. Point it at your
         // deployed Render backend, e.g. https://mymediavault-api.onrender.com/api
-        buildConfigField("String", "API_BASE_URL", "\"https://your-backend.onrender.com/api\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://mymediavault.onrender.com/api\"")
     }
 
     buildTypes {
