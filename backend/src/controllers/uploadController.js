@@ -107,10 +107,21 @@ async function uploadMedia(req, res) {
 
     return res.status(201).json({ item, deduped: false });
   } catch (err) {
-    cleanupTempFile(file.path);
-    const status = err.status || 502;
-    return res.status(status).json({ error: err.publicMessage || "Upload failed" });
-  }
+  cleanupTempFile(file.path);
+
+  console.error("MEDIA UPLOAD FAILED:", {
+    message: err.message,
+    stack: err.stack,
+    status: err.status,
+    publicMessage: err.publicMessage,
+  });
+
+  const status = err.status || 500;
+
+  return res.status(status).json({
+    error: err.publicMessage || err.message || "Upload failed",
+  });
+}
 }
 
 module.exports = { uploadMedia };
