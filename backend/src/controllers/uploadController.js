@@ -3,6 +3,12 @@ const crypto = require("crypto");
 const Media = require("../models/Media");
 const cloudinaryService = require("../services/cloudinaryService");
 
+function parseDateOrUndefined(value) {
+  if (!value) return undefined;
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
 function hashFile(filePath) {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash("sha256");
@@ -86,8 +92,8 @@ async function uploadMedia(req, res) {
       width: width ? parseInt(width, 10) : undefined,
       height: height ? parseInt(height, 10) : undefined,
       duration: duration ? parseFloat(duration) : undefined,
-      createdAt: createdAt ? new Date(createdAt) : undefined,
-      modifiedAt: modifiedAt ? new Date(modifiedAt) : undefined,
+      createdAt: parseDateOrUndefined(createdAt),
+      modifiedAt: parseDateOrUndefined(modifiedAt),
       checksum,
       cloudinaryPublicId: cloudinaryResult.public_id,
       cloudinaryUrl: cloudinaryResult.secure_url,
